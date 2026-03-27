@@ -4,10 +4,7 @@ credentials:
       email: geologiayestudios@gmail.com
       name: geologia
       password: Exitoso1
-    usuario2:
-      email: otro@ejemplo.com
-      name: Otro
-      password: Exitoso8
+ 
 
 cookie:
   name: hydropick_cookie

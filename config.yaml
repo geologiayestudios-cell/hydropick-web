@@ -3,7 +3,8 @@ credentials:
     usuario1:
       email: geologiayestudios@gmail.com
       name: geologia
-      password: $2b$12$pZsnJTFgGv37jEC6mMNPSeA.Ds6c2bxGp1vfbKrkxfU.b.9Fjeo/K
+      password: $2b$12$RCckzKvo.cqAmb4AuxP6tukRH75ahYyv5j392cjBmq2.FMsPEQixi
+
  
 
 cookie:

@@ -1,0 +1,15 @@
+credentials:
+  usernames:
+    usuario1:
+      email: geologiayestudios@gmail.com.com
+      name: geologia
+      password: Exitoso1$EjemploHash1234567890abcdefg1234567890abcdefg1234567890ab  # Cambia esto
+    usuario2:
+      email: otro@ejemplo.com
+      name: Otro Usuario
+      password: $2b$12$OtroHashAqui...
+
+cookie:
+  name: hydropick_cookie
+  key: super_secret_key_random_2026
+  expiry_days: 30

@@ -10,7 +10,7 @@ import streamlit_authenticator as stauth
 
 st.set_page_config(page_title="TEFSM HydroPick", layout="wide", page_icon="🧪")
 
-# ====================== AUTENTICACIÓN ======================
+# ====================== AUTENTICACIÓN (VERSIÓN 2025-2026) ======================
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -21,18 +21,16 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-name, authentication_status, username = authenticator.login()
+# NUEVA FORMA CORRECTA (sin desempaquetar)
+authenticator.login()
 
-if authentication_status == False:
-    st.error("Usuario o contraseña incorrectos")
-elif authentication_status == None:
-    st.warning("Por favor ingresa tu usuario y contraseña")
-elif authentication_status:
+if st.session_state.get("authentication_status") == True:
     authenticator.logout("Cerrar sesión", "sidebar")
+    
     st.title("🧪 TEFSM HydroPick - Post-procesador PQWT")
     st.markdown("**Análisis automático de anomalías TEFSM**")
 
-    # ====================== SUBIR CSV ======================
+    # ====================== EL RESTO DE TU APP (sin cambios) ======================
     uploaded_file = st.file_uploader("Sube tu archivo CSV del PQWT", type=["csv"])
 
     if uploaded_file is not None:
@@ -49,7 +47,6 @@ elif authentication_status:
 
         freq_cols = [col for col in df.columns if col.startswith('freq')]
 
-        # Análisis automático
         df['avg_potential'] = df[freq_cols].mean(axis=1)
         anomaly_idx = df['avg_potential'].idxmin()
         anomaly_dist = df.loc[anomaly_idx, 'Distance']
@@ -118,4 +115,7 @@ elif authentication_status:
             fig3.savefig(buf3, format="png", dpi=300, bbox_inches="tight")
             st.download_button("⬇️ Descargar Curva SP", buf3.getvalue(), "SP_curve.png", "image/png")
 
-# ====================== CONFIGURACIÓN DE USUARIOS ======================
+elif st.session_state.get("authentication_status") == False:
+    st.error("Usuario o contraseña incorrectos ❌")
+elif st.session_state.get("authentication_status") is None:
+    st.warning("Por favor inicia sesión")

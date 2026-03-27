@@ -1,13 +1,13 @@
 credentials:
   usernames:
     usuario1:
-      email: geologiayestudios@gmail.com.com
+      email: geologiayestudios@gmail.com
       name: geologia
-      password: Exitoso1$EjemploHash1234567890abcdefg1234567890abcdefg1234567890ab  # Cambia esto
+      password: Exitoso1
     usuario2:
       email: otro@ejemplo.com
-      name: Otro Usuario
-      password: $2b$12$OtroHashAqui...
+      name: Otro
+      password: Exitoso8
 
 cookie:
   name: hydropick_cookie

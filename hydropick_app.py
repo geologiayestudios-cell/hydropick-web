@@ -67,13 +67,12 @@ if st.session_state.get("authentication_status") == True:
 
         freq_cols = [col for col in df.columns if col.startswith('freq')]
 
-        # Profundidad física real (fórmula TEFSM)
+        # Profundidad física real
         freq_values = np.array([2520,2000,1600,1250,1000,800,630,500,400,315,250,200,160,125,100,
                                 80,63,50,40,31.5,25,20,16,12.5,10,8,6.3,5,4,3.15,2.5,2,1.6,1.25,1,
                                 0.8,0.63,0.5,0.4,0.315])
         depth_levels = 0.40 * 503.3 * np.sqrt(rho / freq_values)
 
-        # Análisis generalizado
         df['avg_potential'] = df[freq_cols].mean(axis=1)
         percentile_20 = np.percentile(df[freq_cols].values, 20)
         df['anomaly_score'] = ((df[freq_cols] < low_epd_threshold) & 
@@ -106,17 +105,26 @@ if st.session_state.get("authentication_status") == True:
             st.pyplot(fig1)
 
         with tab2:
+            st.subheader("Sección Geofísica 2D")
             n_freq = len(freq_cols)
             x_points = np.repeat(df['Distance'].values, n_freq)
             z_points = np.tile(depth_levels, n_points)
             values = df[freq_cols].values.ravel()
+
+            # CORRECCIÓN: límite real de profundidad + relleno de NaNs
+            actual_max_d = min(max_depth, depth_levels.max())
             xi = np.linspace(0, line_length, 400)
-            zi = np.linspace(0, max_depth, 200)
+            zi = np.linspace(0, actual_max_d, 200)
             xi, zi = np.meshgrid(xi, zi)
+            
             vi = griddata((x_points, z_points), values, (xi, zi), method='cubic')
+            
+            # Rellenar NaNs para que la sección inferior siempre se vea completa
+            vi = np.nan_to_num(vi, nan=np.nanmedian(vi))
 
             fig2, ax2 = plt.subplots(figsize=(14, 8))
-            im = ax2.imshow(vi, extent=[0, line_length, max_depth, 0], aspect='auto', cmap='jet', origin='upper')
+            im = ax2.imshow(vi, extent=[0, line_length, actual_max_d, 0], 
+                           aspect='auto', cmap='jet', origin='upper', vmin=vi.min(), vmax=vi.max())
             plt.colorbar(im, ax=ax2, label='Potencial (mV)')
             ax2.axvline(anomaly_dist, color='red', linewidth=3, label='Anomalía')
             ax2.axvspan(anomaly_dist - anomaly_width/2, anomaly_dist + anomaly_width/2, alpha=0.3, color='red')
@@ -124,11 +132,12 @@ if st.session_state.get("authentication_status") == True:
             ax2.set_xlabel("Distancia (m)")
             ax2.set_ylabel("Profundidad (m)")
             ax2.invert_yaxis()
+            ax2.set_ylim(actual_max_d, 0)
             ax2.legend()
             st.pyplot(fig2)
 
         with tab3:
-            # CORRECCIÓN: respetar max_depth
+            st.subheader(f"Curva SP en la anomalía ({anomaly_dist:.1f} m)")
             mask = depth_levels <= max_depth
             sp_plot = df.loc[anomaly_idx, freq_cols].values[mask]
             depth_plot = depth_levels[mask]
@@ -142,7 +151,6 @@ if st.session_state.get("authentication_status") == True:
             ax3.grid(True, alpha=0.3)
             ax3.invert_yaxis()
             
-            # Rectángulo rojo dinámico
             rect_y = max_depth * 0.4
             rect_h = max_depth * 0.3
             rect = plt.Rectangle((0, rect_y), 0.6, rect_h, fill=False, edgecolor='red', linewidth=3)
@@ -150,17 +158,16 @@ if st.session_state.get("authentication_status") == True:
             
             st.pyplot(fig3)
 
-        # ====================== BOTÓN INFORME PDF ======================
+        # ====================== INFORME PDF ======================
         if st.button("📄 Generar Informe PDF (1 hoja profesional)", type="primary", use_container_width=True):
             with st.spinner("Creando informe PDF..."):
                 fig_pdf = plt.figure(figsize=(14, 11))
                 gs = fig_pdf.add_gridspec(3, 1, height_ratios=[1.2, 2.2, 1.2], hspace=0.35)
-
                 fig_pdf.suptitle(f"INFORME TEFSM HYDROPICK - {geology_type}\n"
                                  f"Anomalía principal en {anomaly_dist:.1f} m | {datetime.now().strftime('%d/%m/%Y')}", 
                                  fontsize=16, fontweight='bold')
 
-                # Curvas de frecuencia
+                # Curvas
                 ax1p = fig_pdf.add_subplot(gs[0])
                 for col in freq_cols:
                     ax1p.plot(df['Distance'], df[col], lw=1.2, alpha=0.75)
@@ -170,9 +177,10 @@ if st.session_state.get("authentication_status") == True:
                 ax1p.set_ylabel("Potencial (mV)")
                 ax1p.grid(True, alpha=0.3)
 
-                # Sección 2D
+                # Sección 2D (misma corrección)
                 ax2p = fig_pdf.add_subplot(gs[1])
-                im = ax2p.imshow(vi, extent=[0, line_length, max_depth, 0], aspect='auto', cmap='jet', origin='upper')
+                im = ax2p.imshow(vi, extent=[0, line_length, actual_max_d, 0], 
+                                aspect='auto', cmap='jet', origin='upper')
                 fig_pdf.colorbar(im, ax=ax2p, label='Potencial (mV)')
                 ax2p.axvline(anomaly_dist, color='red', linewidth=3)
                 ax2p.axvspan(anomaly_dist - anomaly_width/2, anomaly_dist + anomaly_width/2, alpha=0.3, color='red')
@@ -203,9 +211,9 @@ if st.session_state.get("authentication_status") == True:
                     use_container_width=True
                 )
 
-        st.info("🔬 Análisis generalizado • Profundidad física calculada según fórmula TEFSM")
+        st.info("🔬 Análisis generalizado • Sección 2D ahora se genera completa")
 
 else:
     st.warning("Por favor inicia sesión")
 
-st.caption("TEFSM HydroPick Generalizado • Basado en principios TEFSM")
+st.caption("TEFSM HydroPick Generalizado")

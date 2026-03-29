@@ -10,7 +10,7 @@ import streamlit_authenticator as stauth
 
 st.set_page_config(page_title="TEFSM HydroPick", layout="wide", page_icon="🧪")
 
-# ====================== AUTENTICACIÓN (VERSIÓN 2025-2026) ======================
+# ====================== AUTENTICACIÓN ======================
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -21,41 +21,84 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# NUEVA FORMA CORRECTA (sin desempaquetar)
 authenticator.login()
 
 if st.session_state.get("authentication_status") == True:
     authenticator.logout("Cerrar sesión", "sidebar")
     
     st.title("🧪 TEFSM HydroPick - Post-procesador PQWT")
-    st.markdown("**Análisis automático de anomalías TEFSM**")
+    st.markdown("**Análisis automático generalizado para cualquier geología** (sedimentaria, ígnea, metamórfica, etc.)")
 
-    # ====================== EL RESTO DE TU APP (sin cambios) ======================
     uploaded_file = st.file_uploader("Sube tu archivo CSV del PQWT", type=["csv"])
 
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
         
-        st.sidebar.header("⚙️ Configuración")
-        line_length = st.sidebar.number_input("Longitud total de la línea (m)", value=300.0, step=10.0)
-        max_depth = st.sidebar.number_input("Profundidad máxima (m)", value=200.0, step=10.0)
-        anomaly_width = st.sidebar.slider("Ancho de anomalía (m)", 5, 30, 15)
+        # ====================== SIDEBAR - CONFIGURACIÓN GEOLOGÍA ======================
+        st.sidebar.header("🪨 Configuración Geológica")
+        geology_type = st.sidebar.selectbox(
+            "Tipo de terreno principal",
+            ["Granito / Ígnea dura", "Sedimentaria", "Metamórfica / Mixta", "Volcánica", "Personalizado"]
+        )
 
+        if geology_type == "Granito / Ígnea dura":
+            default_rho = 200
+            default_threshold = 0.085
+        elif geology_type == "Sedimentaria":
+            default_rho = 50
+            default_threshold = 0.15
+        elif geology_type == "Metamórfica / Mixta":
+            default_rho = 150
+            default_threshold = 0.10
+        elif geology_type == "Volcánica":
+            default_rho = 80
+            default_threshold = 0.12
+        else:
+            default_rho = 100
+            default_threshold = 0.10
+
+        rho = st.sidebar.number_input("Resistividad asumida (Ω·m)", value=default_rho, min_value=10, max_value=2000, step=10)
+        low_epd_threshold = st.sidebar.number_input("Umbral EPD máximo para anomalía (mV)", 
+                                                   value=default_threshold, step=0.01)
+
+        line_length = st.sidebar.number_input("Longitud total de la línea (m)", value=300.0, step=10.0)
+        max_depth = st.sidebar.number_input("Profundidad máxima a graficar (m)", value=200.0, step=10.0)
+        anomaly_width = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 15)
+
+        # ====================== CÁLCULOS ======================
         n_points = len(df)
         spacing = line_length / (n_points - 1) if n_points > 1 else 10
         df['Distance'] = (df['N'] - 1) * spacing
 
         freq_cols = [col for col in df.columns if col.startswith('freq')]
 
+        # Profundidad física real (fórmula TEFSM)
+        freq_values = np.array([2520,2000,1600,1250,1000,800,630,500,400,315,250,200,160,125,100,
+                                80,63,50,40,31.5,25,20,16,12.5,10,8,6.3,5,4,3.15,2.5,2,1.6,1.25,1,
+                                0.8,0.63,0.5,0.4,0.315])  # Hz aproximadas PQWT-300/600
+        depth_levels = 0.40 * 503.3 * np.sqrt(rho / freq_values)
+
+        # Análisis generalizado
         df['avg_potential'] = df[freq_cols].mean(axis=1)
-        anomaly_idx = df['avg_potential'].idxmin()
+        percentile_20 = np.percentile(df[freq_cols].values, 20)
+        df['anomaly_score'] = ((df[freq_cols] < low_epd_threshold) & 
+                               (df[freq_cols] < percentile_20)).sum(axis=1)
+
+        anomaly_candidates = df[df['anomaly_score'] >= 3]
+        if not anomaly_candidates.empty:
+            anomaly_idx = anomaly_candidates['avg_potential'].idxmin()
+        else:
+            anomaly_idx = df['avg_potential'].idxmin()
+
         anomaly_dist = df.loc[anomaly_idx, 'Distance']
 
-        st.success(f"✅ Anomalía principal detectada en **{anomaly_dist:.1f} m** (punto N={df.loc[anomaly_idx, 'N']})")
+        st.success(f"✅ **Anomalía principal detectada** en **{anomaly_dist:.1f} m** (punto N={df.loc[anomaly_idx, 'N']})")
 
-        tab1, tab2, tab3 = st.tabs(["📈 Curvas de Frecuencia", "🗺️ Sección 2D", "📉 Curva SP"])
+        # ====================== PESTAÑAS ======================
+        tab1, tab2, tab3 = st.tabs(["📈 Curvas de Frecuencia", "🗺️ Sección 2D", "📉 Curva SP Vertical"])
 
         with tab1:
+            st.subheader("Curvas de Frecuencia PQWT")
             fig1, ax1 = plt.subplots(figsize=(14, 6))
             for col in freq_cols:
                 ax1.plot(df['Distance'], df[col], lw=1.2, alpha=0.75, label=col)
@@ -72,7 +115,7 @@ if st.session_state.get("authentication_status") == True:
             st.download_button("⬇️ Descargar Curvas", buf.getvalue(), "frequency_curves.png", "image/png")
 
         with tab2:
-            depth_levels = np.linspace(0, max_depth, len(freq_cols))
+            st.subheader("Sección Geofísica 2D")
             n_freq = len(freq_cols)
             x_points = np.repeat(df['Distance'].values, n_freq)
             z_points = np.tile(depth_levels, n_points)
@@ -99,6 +142,7 @@ if st.session_state.get("authentication_status") == True:
             st.download_button("⬇️ Descargar Sección 2D", buf2.getvalue(), "2D_section.png", "image/png")
 
         with tab3:
+            st.subheader(f"Curva SP en la anomalía ({anomaly_dist:.1f} m)")
             sp_values = df.loc[anomaly_idx, freq_cols].values
             fig3, ax3 = plt.subplots(figsize=(6, 9))
             ax3.plot(sp_values, depth_levels, 'b-', linewidth=2.5)
@@ -115,7 +159,9 @@ if st.session_state.get("authentication_status") == True:
             fig3.savefig(buf3, format="png", dpi=300, bbox_inches="tight")
             st.download_button("⬇️ Descargar Curva SP", buf3.getvalue(), "SP_curve.png", "image/png")
 
-elif st.session_state.get("authentication_status") == False:
-    st.error("Usuario o contraseña incorrectos ❌")
-elif st.session_state.get("authentication_status") is None:
+        st.info("🔬 Análisis generalizado para cualquier geología • Profundidad calculada con fórmula física TEFSM")
+
+else:
     st.warning("Por favor inicia sesión")
+
+st.caption("TEFSM HydroPick Generalizado • Basado en principios TEFSM + papers Gomo & Ngobe (2024) y Lu Yulong (2023)")

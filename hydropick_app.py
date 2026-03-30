@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
+from scipy.ndimage import gaussian_filter
 from io import BytesIO
 import yaml
 from yaml.loader import SafeLoader
@@ -66,43 +67,48 @@ if st.session_state.get("authentication_status") == True:
         else:
             default_rho, default_th = 100, 0.10
 
-        rho = st.sidebar.number_input("Resistividad asumida (Ω·m)", value=default_rho, min_value=10, max_value=2000, step=10)
-        low_epd_threshold = st.sidebar.number_input("Umbral EPD máximo para anomalía (mV)",
-                                                    value=default_th, step=0.01)
-
-        line_length = st.sidebar.number_input("Longitud total de la línea (m)", value=300.0, step=10.0)
-        max_depth = st.sidebar.number_input("Profundidad máxima (m)", value=200.0, step=10.0)
-        anomaly_width = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 15)
+        rho               = st.sidebar.number_input("Resistividad asumida (Ω·m)", value=default_rho, min_value=10, max_value=2000, step=10)
+        low_epd_threshold = st.sidebar.number_input("Umbral EPD máximo para anomalía (mV)", value=default_th, step=0.01)
+        line_length       = st.sidebar.number_input("Longitud total de la línea (m)", value=300.0, step=10.0)
+        max_depth         = st.sidebar.number_input("Profundidad máxima (m)", value=200.0, step=10.0)
+        anomaly_width     = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 15)
 
         # ====================== CÁLCULOS ======================
         n_points = len(df)
 
-        # FIX 4: advertir si las distancias no son equidistantes
         if 'Distance' in df.columns:
             st.info("ℹ️ Se usará la columna 'Distance' del CSV en lugar de calcularla.")
         else:
             spacing = line_length / (n_points - 1) if n_points > 1 else 10
             df['Distance'] = (df['N'] - 1) * spacing
 
-        # Frecuencias del instrumento PQWT (40 niveles)
-        freq_values_full = np.array([
-            2520, 2000, 1600, 1250, 1000, 800, 630, 500, 400, 315,
-            250, 200, 160, 125, 100, 80, 63, 50, 40, 31.5,
-            25, 20, 16, 12.5, 10, 8, 6.3, 5, 4, 3.15,
-            2.5, 2, 1.6, 1.25, 1, 0.8, 0.63, 0.5, 0.4, 0.315
+        # ------------------------------------------------------------------
+        # TABLA DE FRECUENCIAS DINÁMICA — cubre 40 (150 m), 56 (500 m) y más.
+        # Sigue la escala 1/3 de octava estándar del instrumento PQWT.
+        # ------------------------------------------------------------------
+        _freq_base = np.array([
+            2520,    2000,    1600,    1250,    1000,    800,     630,     500,     400,     315,
+            250,     200,     160,     125,     100,     80,      63,      50,      40,      31.5,
+            25,      20,      16,      12.5,    10,      8,       6.3,     5,       4,       3.15,
+            2.5,     2,       1.6,     1.25,    1,       0.8,     0.63,    0.5,     0.4,     0.315,
+            0.25,    0.2,     0.16,    0.125,   0.1,     0.08,    0.063,   0.05,    0.04,    0.0315,
+            0.025,   0.02,    0.016,   0.0125,  0.01,    0.008,   0.0063,  0.005,   0.004,   0.00315,
+            0.0025,  0.002,   0.0016,  0.00125, 0.001,   0.0008,  0.00063, 0.0005,  0.0004,  0.000315,
+            0.00025, 0.0002,  0.00016, 0.000125,0.0001,  0.00008, 0.000063,0.00005, 0.00004, 0.0000315,
         ])
 
-        # FIX 3: alinear freq_cols con freq_values para evitar desajuste silencioso
-        n_usable = min(len(freq_cols), len(freq_values_full))
-        if len(freq_cols) != len(freq_values_full):
-            st.warning(
-                f"⚠️ El CSV tiene {len(freq_cols)} columnas 'freq*' pero se esperaban "
-                f"{len(freq_values_full)}. Se usarán solo las primeras {n_usable}."
-            )
-        freq_cols = freq_cols[:n_usable]
-        freq_values = freq_values_full[:n_usable]
+        n_cols = len(freq_cols)
+        if n_cols > len(_freq_base):
+            # Extensión automática si el CSV supera los 80 niveles predefinidos
+            extra     = n_cols - len(_freq_base)
+            ratio     = _freq_base[-2] / _freq_base[-1]
+            extension = _freq_base[-1] / (ratio ** np.arange(1, extra + 1))
+            _freq_base = np.concatenate([_freq_base, extension])
 
-        # Profundidad física por nivel de frecuencia
+        freq_values = _freq_base[:n_cols]
+        n_usable    = n_cols
+
+        # Profundidad física por nivel de frecuencia (fórmula skin-depth AMT)
         depth_levels = 0.40 * 503.3 * np.sqrt(rho / freq_values)
 
         df['avg_potential'] = df[freq_cols].mean(axis=1)
@@ -113,50 +119,53 @@ if st.session_state.get("authentication_status") == True:
         ).sum(axis=1)
 
         anomaly_candidates = df[df['anomaly_score'] >= 3]
-        if not anomaly_candidates.empty:
-            anomaly_idx = anomaly_candidates['avg_potential'].idxmin()
-        else:
-            anomaly_idx = df['avg_potential'].idxmin()
-
+        anomaly_idx  = anomaly_candidates['avg_potential'].idxmin() if not anomaly_candidates.empty else df['avg_potential'].idxmin()
         anomaly_dist = df.loc[anomaly_idx, 'Distance']
 
         st.success(f"✅ **Anomalía principal detectada** en **{anomaly_dist:.1f} m** (punto N={df.loc[anomaly_idx, 'N']})")
 
-        # ====================== INTERPOLACIÓN 2D (compartida entre tab y PDF) ======================
+        # ====================== INTERPOLACIÓN 2D ======================
         x_points = np.repeat(df['Distance'].values, n_usable)
         z_points = np.tile(depth_levels, n_points)
-        values = df[freq_cols].values.ravel()
+        values   = df[freq_cols].values.ravel()
 
         actual_max_d = min(max_depth, depth_levels.max())
         xi = np.linspace(0, line_length, 400)
         zi = np.linspace(0, actual_max_d, 200)
         xi, zi = np.meshgrid(xi, zi)
 
-        # Interpolación: linear primero, luego nearest para rellenar NaNs en bordes
-        # (la zona superficial 0..depth_levels.min() no tiene datos medidos → NaN con linear)
+        # Paso 1: cúbico → máxima suavidad en zonas con datos
+        # Paso 2: nearest → rellena NaNs de borde (zona sin datos) con el vecino más cercano
+        # Paso 3: gaussian_filter → suavizado final para eliminar artefactos residuales
         try:
-            vi = griddata((x_points, z_points), values, (xi, zi), method='linear')
-            nan_mask = np.isnan(vi)
-            if nan_mask.any():
-                vi_nearest = griddata((x_points, z_points), values, (xi, zi), method='nearest')
-                vi[nan_mask] = vi_nearest[nan_mask]
+            vi = griddata((x_points, z_points), values, (xi, zi), method='cubic')
         except Exception:
-            vi = griddata((x_points, z_points), values, (xi, zi), method='nearest')
+            vi = griddata((x_points, z_points), values, (xi, zi), method='linear')
 
-        # Curva SP en la anomalía (compartida entre tab y PDF)
-        # FIX SP-1: ordenar por profundidad ascendente antes de graficar
-        # (freq_cols puede no estar en orden de frecuencia descendente en el CSV)
-        sort_idx = np.argsort(depth_levels)
+        nan_mask = np.isnan(vi)
+        if nan_mask.any():
+            vi_nearest   = griddata((x_points, z_points), values, (xi, zi), method='nearest')
+            vi[nan_mask] = vi_nearest[nan_mask]
+
+        vi = gaussian_filter(vi, sigma=2)   # sigma=2 px — ajustable si se quiere más/menos suavidad
+
+        # ====================== CURVA SP ======================
+        # Ordenar por profundidad ascendente — garantiza curva coherente sin saltos
+        sort_idx            = np.argsort(depth_levels)
         depth_levels_sorted = depth_levels[sort_idx]
-        freq_cols_sorted = [freq_cols[i] for i in sort_idx]
+        freq_cols_sorted    = [freq_cols[i] for i in sort_idx]
 
-        mask = depth_levels_sorted <= max_depth
-        sp_plot = df.loc[anomaly_idx, freq_cols_sorted].values[mask]
+        mask       = depth_levels_sorted <= max_depth
+        sp_plot    = df.loc[anomaly_idx, freq_cols_sorted].values[mask]
         depth_plot = depth_levels_sorted[mask]
+
+        min_sp_idx    = np.argmin(sp_plot)
+        aquifer_depth = depth_plot[min_sp_idx]
 
         # ====================== PESTAÑAS ======================
         tab1, tab2, tab3 = st.tabs(["📈 Curvas de Frecuencia", "🗺️ Sección 2D", "📉 Curva SP Vertical"])
 
+        # --- Tab 1: Curvas de Frecuencia ---
         with tab1:
             fig1, ax1 = plt.subplots(figsize=(14, 6))
             for col in freq_cols:
@@ -170,23 +179,27 @@ if st.session_state.get("authentication_status") == True:
             ax1.legend(bbox_to_anchor=(1.05, 1), fontsize=8)
             st.pyplot(fig1)
 
+        # --- Tab 2: Sección Geofísica 2D ---
         with tab2:
             st.subheader("Sección Geofísica 2D")
             fig2, ax2 = plt.subplots(figsize=(14, 8))
-            im = ax2.imshow(vi, extent=[0, line_length, actual_max_d, 0],
-                            aspect='auto', cmap='jet', origin='upper',
-                            vmin=vi.min(), vmax=vi.max())
+            im = ax2.imshow(
+                vi,
+                extent=[0, line_length, actual_max_d, 0],
+                aspect='auto', cmap='jet', origin='upper',
+                vmin=np.percentile(vi, 2), vmax=np.percentile(vi, 98)   # recorte de outliers
+            )
             plt.colorbar(im, ax=ax2, label='Potencial (mV)')
             ax2.axvline(anomaly_dist, color='red', linewidth=3, label='Anomalía')
             ax2.axvspan(anomaly_dist - anomaly_width / 2, anomaly_dist + anomaly_width / 2, alpha=0.3, color='red')
             ax2.set_title("Sección Geofísica 2D")
             ax2.set_xlabel("Distancia (m)")
             ax2.set_ylabel("Profundidad (m)")
-            # FIX 1: eliminado invert_yaxis() — set_ylim ya define el eje invertido
             ax2.set_ylim(actual_max_d, 0)
             ax2.legend()
             st.pyplot(fig2)
 
+        # --- Tab 3: Curva SP Vertical ---
         with tab3:
             st.subheader(f"Curva SP en la anomalía ({anomaly_dist:.1f} m)")
             fig3, ax3 = plt.subplots(figsize=(6, 9))
@@ -197,31 +210,28 @@ if st.session_state.get("authentication_status") == True:
             ax3.set_ylabel("Profundidad (m)")
             ax3.grid(True, alpha=0.3)
 
-            # FIX SP-2: límites X explícitos con margen para que la curva no quede pegada al borde
             x_margin = (sp_plot.max() - sp_plot.min()) * 0.15 if sp_plot.max() != sp_plot.min() else 0.01
             ax3.set_xlim(sp_plot.min() - x_margin, sp_plot.max() + x_margin)
+            ax3.set_ylim(depth_plot.max() * 1.05, 0)
 
-            # FIX SP-3: eje Y con profundidad real de los datos (no max_depth fijo)
-            ax3.set_ylim(depth_plot.max() * 1.05, 0)   # 0 arriba, profundidad máxima abajo
-
-            # FIX SP-4: rectángulo centrado en la zona de mínimo potencial (posible acuífero)
-            # Detectar zona de mínimo como candidato de acuífero
-            min_sp_idx = np.argmin(sp_plot)
-            aquifer_depth = depth_plot[min_sp_idx]
-            rect_h = depth_plot.max() * 0.12          # 12% del rango total
+            rect_h     = depth_plot.max() * 0.12
             rect_y_top = max(0, aquifer_depth - rect_h / 2)
-            x_range = sp_plot.max() - sp_plot.min() if sp_plot.max() != sp_plot.min() else 1.0
-            rect_w = x_range * 0.80
-            rect_x = sp_plot.min() - x_margin * 0.5
-            rect = plt.Rectangle((rect_x, rect_y_top), rect_w, rect_h,
-                                  fill=True, facecolor='yellow', edgecolor='red',
-                                  linewidth=2, alpha=0.25, zorder=3)
+            x_range    = sp_plot.max() - sp_plot.min() if sp_plot.max() != sp_plot.min() else 1.0
+            rect_w     = x_range * 0.80
+            rect_x     = sp_plot.min() - x_margin * 0.5
+            rect = plt.Rectangle(
+                (rect_x, rect_y_top), rect_w, rect_h,
+                fill=True, facecolor='yellow', edgecolor='red',
+                linewidth=2, alpha=0.25, zorder=3
+            )
             ax3.add_patch(rect)
-            ax3.annotate(f"↓ Posible acuífero\n  ~{aquifer_depth:.0f} m",
-                         xy=(sp_plot[min_sp_idx], aquifer_depth),
-                         xytext=(sp_plot.mean(), aquifer_depth + depth_plot.max() * 0.08),
-                         fontsize=9, color='darkred',
-                         arrowprops=dict(arrowstyle='->', color='red'))
+            ax3.annotate(
+                f"↓ Posible acuífero\n  ~{aquifer_depth:.0f} m",
+                xy=(sp_plot[min_sp_idx], aquifer_depth),
+                xytext=(sp_plot.mean(), aquifer_depth + depth_plot.max() * 0.08),
+                fontsize=9, color='darkred',
+                arrowprops=dict(arrowstyle='->', color='red')
+            )
             st.pyplot(fig3)
 
         # ====================== INFORME PDF ======================
@@ -235,7 +245,6 @@ if st.session_state.get("authentication_status") == True:
                     fontsize=16, fontweight='bold'
                 )
 
-                # Curvas
                 ax1p = fig_pdf.add_subplot(gs[0])
                 for col in freq_cols:
                     ax1p.plot(df['Distance'], df[col], lw=1.2, alpha=0.75)
@@ -245,20 +254,21 @@ if st.session_state.get("authentication_status") == True:
                 ax1p.set_ylabel("Potencial (mV)")
                 ax1p.grid(True, alpha=0.3)
 
-                # Sección 2D
                 ax2p = fig_pdf.add_subplot(gs[1])
-                im = ax2p.imshow(vi, extent=[0, line_length, actual_max_d, 0],
-                                 aspect='auto', cmap='jet', origin='upper')
+                im = ax2p.imshow(
+                    vi,
+                    extent=[0, line_length, actual_max_d, 0],
+                    aspect='auto', cmap='jet', origin='upper',
+                    vmin=np.percentile(vi, 2), vmax=np.percentile(vi, 98)
+                )
                 fig_pdf.colorbar(im, ax=ax2p, label='Potencial (mV)')
                 ax2p.axvline(anomaly_dist, color='red', linewidth=3)
                 ax2p.axvspan(anomaly_dist - anomaly_width / 2, anomaly_dist + anomaly_width / 2, alpha=0.3, color='red')
                 ax2p.set_title("Sección Geofísica 2D")
                 ax2p.set_xlabel("Distancia (m)")
                 ax2p.set_ylabel("Profundidad (m)")
-                # FIX 1 también en PDF
                 ax2p.set_ylim(actual_max_d, 0)
 
-                # Curva SP
                 ax3p = fig_pdf.add_subplot(gs[2])
                 ax3p.plot(sp_plot, depth_plot, 'b-o', linewidth=2.5, markersize=3)
                 ax3p.fill_betweenx(depth_plot, sp_plot, sp_plot.mean(), color='cyan', alpha=0.20)
@@ -269,20 +279,24 @@ if st.session_state.get("authentication_status") == True:
                 x_margin = (sp_plot.max() - sp_plot.min()) * 0.15 if sp_plot.max() != sp_plot.min() else 0.01
                 ax3p.set_xlim(sp_plot.min() - x_margin, sp_plot.max() + x_margin)
                 ax3p.set_ylim(depth_plot.max() * 1.05, 0)
-                rect_h = depth_plot.max() * 0.12
+                rect_h     = depth_plot.max() * 0.12
                 rect_y_top = max(0, aquifer_depth - rect_h / 2)
-                x_range = sp_plot.max() - sp_plot.min() if sp_plot.max() != sp_plot.min() else 1.0
-                rect_w = x_range * 0.80
-                rect_x = sp_plot.min() - x_margin * 0.5
-                rect_p = plt.Rectangle((rect_x, rect_y_top), rect_w, rect_h,
-                                       fill=True, facecolor='yellow', edgecolor='red',
-                                       linewidth=2, alpha=0.25, zorder=3)
+                x_range    = sp_plot.max() - sp_plot.min() if sp_plot.max() != sp_plot.min() else 1.0
+                rect_w     = x_range * 0.80
+                rect_x     = sp_plot.min() - x_margin * 0.5
+                rect_p = plt.Rectangle(
+                    (rect_x, rect_y_top), rect_w, rect_h,
+                    fill=True, facecolor='yellow', edgecolor='red',
+                    linewidth=2, alpha=0.25, zorder=3
+                )
                 ax3p.add_patch(rect_p)
-                ax3p.annotate(f"↓ Posible acuífero\n  ~{aquifer_depth:.0f} m",
-                              xy=(sp_plot[min_sp_idx], aquifer_depth),
-                              xytext=(sp_plot.mean(), aquifer_depth + depth_plot.max() * 0.08),
-                              fontsize=8, color='darkred',
-                              arrowprops=dict(arrowstyle='->', color='red'))
+                ax3p.annotate(
+                    f"↓ Posible acuífero\n  ~{aquifer_depth:.0f} m",
+                    xy=(sp_plot[min_sp_idx], aquifer_depth),
+                    xytext=(sp_plot.mean(), aquifer_depth + depth_plot.max() * 0.08),
+                    fontsize=8, color='darkred',
+                    arrowprops=dict(arrowstyle='->', color='red')
+                )
 
                 buf_pdf = BytesIO()
                 fig_pdf.savefig(buf_pdf, format="pdf", dpi=300, bbox_inches="tight")
@@ -296,7 +310,7 @@ if st.session_state.get("authentication_status") == True:
                     use_container_width=True
                 )
 
-        st.info("🔬 Análisis generalizado • Sección 2D ahora se genera completa")
+        st.info(f"🔬 {n_cols} canales detectados • Profundidad máxima calculada: {depth_levels.max():.0f} m")
 
 else:
     st.warning("Por favor inicia sesión")

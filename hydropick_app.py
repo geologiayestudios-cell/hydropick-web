@@ -27,10 +27,10 @@ authenticator.login()
 if st.session_state.get("authentication_status") == True:
     authenticator.logout("Cerrar sesión", "sidebar")
     
-    st.title("🧪 TEFSM HydroPick - Post-procesador PQWT")
+    st.title("🧪 TEFSM - Post-procesador")
     st.markdown("**Análisis automático generalizado para cualquier geología**")
 
-    uploaded_file = st.file_uploader("Sube tu archivo CSV del PQWT", type=["csv"])
+    uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
 
     if uploaded_file is not None:
         try:
@@ -69,9 +69,9 @@ if st.session_state.get("authentication_status") == True:
         low_epd_threshold = st.sidebar.number_input("Umbral EPD máximo para anomalía (mV)", 
                                                    value=default_th, step=0.01)
 
-        line_length = st.sidebar.number_input("Longitud total de la línea (m)", value=300.0, step=10.0)
-        max_depth = st.sidebar.number_input("Profundidad máxima (m)", value=200.0, step=10.0)
-        anomaly_width = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 15)
+        line_length = st.sidebar.number_input("Longitud total de la línea (m)", value=18.0, step=1.0)
+        max_depth = st.sidebar.number_input("Profundidad máxima (m)", value=300.0, step=10.0)
+        anomaly_width = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 5)
 
         # ====================== CÁLCULOS ======================
         n_points = len(df)

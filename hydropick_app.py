@@ -10,7 +10,7 @@ from yaml.loader import SafeLoader
 import streamlit_authenticator as stauth
 from datetime import datetime
 
-st.set_page_config(page_title="TEFSM HydroPick", layout="wide", page_icon="🧪")
+st.set_page_config(page_title="TEFSM", layout="wide", page_icon="🧪")
 
 # ====================== AUTENTICACIÓN ======================
 try:
@@ -32,7 +32,7 @@ authenticator.login()
 if st.session_state.get("authentication_status") == True:
     authenticator.logout("Cerrar sesión", "sidebar")
 
-    st.title("🧪 TEFSM HydroPick - Post-procesador PQWT")
+    st.title("🧪 TEFSM - Post-procesador")
     st.markdown("**Análisis automático generalizado para cualquier geología**")
 
     uploaded_file = st.file_uploader("Sube tu archivo CSV del PQWT", type=["csv"])
@@ -69,9 +69,9 @@ if st.session_state.get("authentication_status") == True:
 
         rho               = st.sidebar.number_input("Resistividad asumida (Ω·m)", value=default_rho, min_value=10, max_value=2000, step=10)
         low_epd_threshold = st.sidebar.number_input("Umbral EPD máximo para anomalía (mV)", value=default_th, step=0.01)
-        line_length       = st.sidebar.number_input("Longitud total de la línea (m)", value=300.0, step=10.0)
-        max_depth         = st.sidebar.number_input("Profundidad máxima (m)", value=200.0, step=10.0)
-        anomaly_width     = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 15)
+        line_length       = st.sidebar.number_input("Longitud total de la línea (m)", value=18.0, step=1.0)
+        max_depth         = st.sidebar.number_input("Profundidad máxima (m)", value=300.0, step=10.0)
+        anomaly_width     = st.sidebar.slider("Ancho de zona de anomalía (m)", 5, 30, 5)
 
         # ====================== CÁLCULOS ======================
         n_points = len(df)
@@ -240,7 +240,7 @@ if st.session_state.get("authentication_status") == True:
                 fig_pdf = plt.figure(figsize=(14, 11))
                 gs = fig_pdf.add_gridspec(3, 1, height_ratios=[1.2, 2.2, 1.2], hspace=0.35)
                 fig_pdf.suptitle(
-                    f"INFORME TEFSM HYDROPICK - {geology_type}\n"
+                    f"INFORME TEFSM - {geology_type}\n"
                     f"Anomalía principal en {anomaly_dist:.1f} m | {datetime.now().strftime('%d/%m/%Y')}",
                     fontsize=16, fontweight='bold'
                 )

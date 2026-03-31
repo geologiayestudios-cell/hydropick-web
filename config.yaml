@@ -8,7 +8,7 @@ credentials:
     usuario2:
       email: geologiayestudios@gmail.com
       name: geologia2
-      password: $2b$12$9vK7pL3mN5qR7tV9xZ2aB4cD6eF8gH0iJ2kL4mN6oP8qR0tV2wX
+      password: $2b$12$zh0SgIi4J6c0ipRBJf0E7.oQDMeQ1xhWhDMjZz/1e/cvIMgOtejQa
 
 cookie:
   name: hydropick_cookie

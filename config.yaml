@@ -4,6 +4,10 @@ credentials:
       email: geologiayestudios@gmail.com
       name: geologia
       password: $2b$12$RCckzKvo.cqAmb4AuxP6tukRH75ahYyv5j392cjBmq2.FMsPEQixi
+      usuario2:
+      email: geologiayestudios@gmail.com
+      name: geologia2
+      password: $2b$12$9vK7pL3mN5qR7tV9xZ2aB4cD6eF8gH0iJ2kL4mN6oP8qR0tV2wX
 
  
 
